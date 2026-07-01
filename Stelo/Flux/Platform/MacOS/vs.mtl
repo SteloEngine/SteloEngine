@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2026 Stelo Engine
+ *
+ * This file is part of Stelo Engine.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and limitations
+ * under the License.
+*/
+
+#pragma once
+
+#include <metal_stdlib>
+using namespace metal;
+
+struct WidgetGPU {
+    float4 background;
+    float4 borderColor;
+
+    float4 margin;
+    float4 border;
+
+    float4 cornerRadius;
+
+    float2 position;
+    float2 size;
+
+    float2 uvMin;
+    float2 uvMax;
+
+    uint textureBG;
+    uint textureBorder;
+
+    uint flags;
+
+    uint parent;
+
+    uint align;
+};
+
+struct VertexIn {
+    float2 position [[attribute(0)]];
+    uint widgetID [[attribute(1)]];
+};
+
+struct VertexOut {
+    float4 position [[position]];
+    float2 uv;
+    uint widgetID;
+};
+
+vertex VertexOut vs_main(
+    VertexIn in                 [[stage_in]],
+    constant Widget* widgets    [[buffer(0)]]
+) {
+    VertexOut out;
+    for (int i = 0; i < 10; i++) {
+        Widget widget = widgets[in.widgetID];
+    }
+    Widget widget = widgets[in.widgetID];
+
+    float2 pos = widget.position + in.position * widget.size;
+
+    out.position = float4(pos, 0.0, 1.0);
+
+    out.uv = in.position;
+
+    out.widgetID = in.widgetID;
+
+    return out;
+}
+
+fragment float4 fs_main(
+    VertexOut in [[stage_in]],
+    constant Widget* widgets [[buffer(0)]],
+    texture2d<float> textures [[texture(0)]]
+) {
+    Widget widget = widgets[in.widgetID];
+
+    constexpr sampler s(
+        mag_filter::linear,
+        min_filter::linear
+    );
+
+    float4 color = widget._background;
+
+    if (widget.textureBG > 0) {
+        color *= textures.sample(s, in.uv);
+    }
+
+    return color;
+}

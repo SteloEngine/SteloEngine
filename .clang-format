@@ -1,0 +1,8 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 150
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Empty
+PointerAlignment: Left
+SpaceAfterCStyleCast: true
+AllowShortIfStatementsOnASingleLine: true
