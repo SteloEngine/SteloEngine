@@ -157,7 +157,7 @@ struct CompStorage<Transform, false> {
     }
     static bool Register() {
         _typeId = CompTypeManager::Register<C>();
-        CompManager::RegisterCallByID(ShutDown, MoveComp, Create, _typeId);
+        CompManager::RegisterCallByID(ShutDown, SetComp, Create, _typeId);
         return true;
     }
     static bool Unregister() {
@@ -226,31 +226,70 @@ struct CompStorage<Transform, false> {
         return Comp<CompObject>(comp.GetID(), comp.GetGeneration(), comp.GetTypeID());
     }
     
-    static void MoveComp(CompInfo info, CompMoveCode code) {
+    static void SetComp(CompInfo& info, CompSetCode code, bool value) {
+        if(info.GetID() >= _nextId) return;
+
         if (!_executeMoveActionRegistered) {
             _executeMoveActionRegistered = true;
             CompManager::QueueExecuteMoveAction(ExecuteMoveAction);
         }
 
-        if(code == CompMoveCode::MoveToActive && info.IsSelfStatic()) code = CompMoveCode::MoveToStatic;
-        if(code == CompMoveCode::MoveToDestroy) ++_sparse[info.GetID()].generation;
-        
-        uint32_t index;
-        if(_stateMoveCode[info.GetID()] != 0xffffffff) {
-            index = _stateMoveCode[info.GetID()];
-        } else {
-            index = _moveCode.size();
-            _stateMoveCode[info.GetID()] = index;
+        CompMoveCode mvCode;
+
+        switch (code) {
+            case CompSetCode::SetActive: {
+                if (value) {
+                    if (info.IsSelfStatic()) {
+                        info.SetContextState(ContextState::Static);
+                        mvCode = CompMoveCode::MoveToStatic;
+                    } else {
+                        info.SetContextState(ContextState::Active);
+                        mvCode = CompMoveCode::MoveToActive;
+                    }
+                } else {
+                    info.SetContextState(ContextState::Inactive);
+                    mvCode = CompMoveCode::MoveToInactive;
+                }
+                break;
+            }
+            
+            case CompSetCode::SetStatic: {
+                if (info.GetGameObjectState() == GameObjectState::Active && info.IsSelfActive()) {
+                    if (value) {
+                        info.SetContextState(ContextState::Static);
+                        mvCode = CompMoveCode::MoveToStatic;
+                    } else {
+                        info.SetContextState(ContextState::Active);
+                        mvCode = CompMoveCode::MoveToActive;
+                    }
+                } else {
+                    mvCode = CompMoveCode::MoveToInactive;
+                }
+                break;
+            }
+            
+            case CompSetCode::SetDestroy: {
+                info.SetContextState(ContextState::Destroy);
+                mvCode = CompMoveCode::MoveToDestroy;
+                break;
+            }
         }
-        _moveCode[index] = {info.GetID(), code};
+
+        if(_stateMoveCode[info.GetID()] != InvalidIndex) {
+            uint32_t index = _stateMoveCode[info.GetID()];
+            _moveCode[index] = {info.GetID(), mvCode};
+        } else {
+            _stateMoveCode[info.GetID()] = static_cast<uint32_t>(_moveCode.size());
+            _moveCode.push_back({info.GetID(), mvCode});
+        }
     }    
     static void ExecuteMoveAction() {
         _executeMoveActionRegistered = false;
         for (const auto& [id, moveCode] : _moveCode) {
-            if (id >= _sparse.size() || _sparse[id].index == 0xffffffff) continue;
+            if (id >= _sparse.size() || _sparse[id].index == InvalidIndex) continue;
 
             uint32_t idx = _sparse[id].index;
-            _stateMoveCode[id] = 0xffffffff;
+            _stateMoveCode[id] = InvalidIndex;
             switch (moveCode) {
                 case CompMoveCode::MoveToActive: {
                     if (idx >= _inactiveEnd) {
@@ -327,7 +366,7 @@ struct CompStorage<Transform, false> {
                     
                     Swap(idx, _size - 1);
                     --_size;
-                    _sparse[id].index = 0xffffffff;
+                    _sparse[id].index = InvalidIndex;
                     _freeId.push_back(id);
                     break;
                 }

@@ -141,7 +141,7 @@ struct CompStorage<C, false> {
     }
     static bool Register() {
         _typeId = CompTypeManager::Register<C>();
-        CompManager::RegisterCallByID(ShutDown, MoveComp, Create, _typeId);
+        CompManager::RegisterCallByID(ShutDown, SetComp, Create, _typeId);
         return true;
     }
     static bool Unregister() {
@@ -227,7 +227,7 @@ struct CompStorage<C, false> {
         return Comp<CompObject>(comp.GetID(), comp.GetGeneration(), comp.GetTypeID());
     }
     
-    static void MoveComp(CompInfo info, CompMoveCode code) {
+    static void SetComp(CompInfo& info, CompSetCode code, bool value) {
         if(info.GetID() >= _nextId) return;
 
         if (!_executeMoveActionRegistered) {
@@ -235,29 +235,55 @@ struct CompStorage<C, false> {
             CompManager::QueueExecuteMoveAction(ExecuteMoveAction);
         }
 
+        CompMoveCode mvCode;
+
         switch (code) {
-            case CompMoveCode::MoveToActive:
-                if(info.IsSelfStatic()) code = CompMoveCode::MoveToStatic;
-                if constexpr (HasOnEnable<C>) GetCompRef(_sparse[info.id].index).OnEnable();
+            case CompSetCode::SetActive: {
+                info.SetSelfActive(value);
+                if (value) {
+                    if (info.IsSelfStatic()) {
+                        info.SetContextState(ContextState::Static);
+                        mvCode = CompMoveCode::MoveToStatic;
+                    } else {
+                        info.SetContextState(ContextState::Active);
+                        mvCode = CompMoveCode::MoveToActive;
+                    }
+                    if constexpr (HasOnEnable<C>) GetCompRef(info.GetID()).OnEnable();
+                } else {
+                    info.SetContextState(ContextState::Inactive);
+                    mvCode = CompMoveCode::MoveToInactive;
+                    if constexpr (HasOnDisable<C>) GetCompRef(info.GetID()).OnDisable();
+                }
                 break;
-            case CompMoveCode::MoveToStatic: break;
-            case CompMoveCode::MoveToInactive:
-                if constexpr (HasOnDisable<C>) GetCompRef(_sparse[info.id].index).OnDisable();
+            }
+            
+            case CompSetCode::SetStatic: {
+                info.SetSelfStatic(value);
+                if (value) {
+                    info.SetContextState(ContextState::Static);
+                    mvCode = CompMoveCode::MoveToStatic;
+                } else {
+                    info.SetContextState(ContextState::Active);
+                    mvCode = CompMoveCode::MoveToActive;
+                }
                 break;
-            case CompMoveCode::MoveToDestroy:
-                if constexpr (HasOnDestroy<C>) GetCompRef(_sparse[info.id].index).OnDestroy();
-                ++_sparse[info.GetID()].generation;
+            }
+            
+            case CompSetCode::SetDestroy: {
+                info.SetContextState(ContextState::Destroy);
+                if constexpr (HasOnDestroy<C>) GetCompRef(info.GetID()).OnDestroy();
+                mvCode = CompMoveCode::MoveToDestroy;
                 break;
+            }
         }
 
-        uint32_t index;
-        if(_stateMoveCode[info.GetID()] != 0xffffffff) {
-            index = _stateMoveCode[info.GetID()];
+        if(_stateMoveCode[info.GetID()] != InvalidIndex) {
+            uint32_t index = _stateMoveCode[info.GetID()];
+            _moveCode[index] = {info.GetID(), mvCode};
         } else {
-            index = _moveCode.size();
-            _stateMoveCode[info.GetID()] = index;
+            _stateMoveCode[info.GetID()] = static_cast<uint32_t>(_moveCode.size());
+            _moveCode.push_back({info.GetID(), mvCode});
         }
-        _moveCode[index] = {info.GetID(), code};
     }
 
     static void Start() {
@@ -278,7 +304,7 @@ struct CompStorage<C, false> {
                 current += PackSize;
             }
 
-            if (current < _size) CompStorageConfig<C>::Start(0, _size - current, _components[current >> PackSizeShift]);
+            if (current < _size) CompStorageConfig<C>::Start(0, _size - current, _components[current >> PackSizeShift]->data());
         }
         else {
             for (uint32_t i = _inactiveEnd; i < _size; ++i) {
@@ -436,7 +462,7 @@ struct CompStorage<C, false> {
         _executeMoveActionRegistered = false;
         for (const auto& [id, moveCode] : _moveCode) {
             uint32_t idx = _sparse[id].index;
-            _stateMoveCode[id] = 0xffffffff;
+            _stateMoveCode[id] = InvalidIndex;
 
             switch (moveCode) {
                 case CompMoveCode::MoveToActive: {
@@ -514,7 +540,7 @@ struct CompStorage<C, false> {
                     
                     Swap(idx, _size - 1);
                     --_size;
-                    _sparse[id].index = 0xffffffff;
+                    _sparse[id].index = InvalidIndex;
                     _freeId.push_back(id);
                     break;
                 }
@@ -584,7 +610,7 @@ struct CompStorage<C, true> {
 
 template<typename T>
 Comp<T> GameObject::AddComponent() {
-    ContextState ctx = _isActive ? (_isStatic ? ContextState::Static : ContextState::Active) : ContextState::Inactive;
+    GameObjectState ctx = _isActive ? (_isStatic ? GameObjectState::Static : GameObjectState::Active) : GameObjectState::Inactive;
     Comp<T> comp = CompStorage<T>::CreateRaw(ctx);
     comp->InternalSetGameObject(this);
     comp->InternalSetTransform(_transform);

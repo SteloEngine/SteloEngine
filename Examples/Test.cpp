@@ -77,7 +77,7 @@ struct Test : public Component {
 template<>
 struct CompStorageConfig<Test> : public CompStorageConfig<void> {
     static constexpr uint32_t InitialPackCount = 1;
-    static constexpr uint8_t PackSizeShift = 6;
+    static constexpr uint8_t PackSizeShift = 24;
 };
 REGISTER_COMPONENT(Test)
 

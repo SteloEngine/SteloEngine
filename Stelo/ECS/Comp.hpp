@@ -26,6 +26,10 @@
 
 namespace Stelo {
 
+constexpr uint32_t InvalidID = std::numeric_limits<uint32_t>::max();
+constexpr uint32_t InvalidIndex = std::numeric_limits<uint32_t>::max();
+constexpr uint16_t InvalidTypeID = std::numeric_limits<uint16_t>::max();
+
 /// DO NOT change the enum order.
 ///
 /// The current order is relied upon by comparison operators
@@ -40,6 +44,12 @@ enum class CompMoveCode : uint8_t {
     MoveToStatic,
     MoveToInactive,
     MoveToDestroy
+};
+
+enum class CompSetCode : uint8_t {
+    SetActive,
+    SetStatic,
+    SetDestroy
 };
 
 inline CompMoveCode ContextStateToMoveCode(ContextState state) {
@@ -74,9 +84,9 @@ public:
 };
 
 struct CompIndex {
-    uint32_t index = 0xffffffff;
+    uint32_t index = InvalidIndex;
     uint16_t generation = 0;
-    uint16_t typeID = 0xffff;
+    uint16_t typeID = InvalidTypeID;
 };
 
 struct CompStorageView {
@@ -96,12 +106,12 @@ struct CompStorageView {
 
 struct CompManager {
     using FCall = void(*)();
-    using FCompMove = void(*)(CompInfo id, CompMoveCode);
+    using FCompSet = void(*)(CompInfo&, CompSetCode, bool value);
     using FCompCreate = Comp<CompObject>(*)(GameObjectState);
 
     static inline CompStorageView* storages = nullptr;
     static inline FCall* ShutdownCalls = nullptr;
-    static inline FCompMove* CompMoveCalls = nullptr;
+    static inline FCompSet* CompSetCalls = nullptr;
     static inline FCompCreate* CompCreateCalls = nullptr;
     static inline uint16_t capacity = 0;
 
@@ -123,38 +133,38 @@ struct CompManager {
             
             CompStorageView* newStorages = new CompStorageView[newCap]{};
             FCall* newShutDownCalls = new FCall[newCap]{};
-            FCompMove* newCompMoveCalls = new FCompMove[newCap]{};
+            FCompSet* newCompSetCalls = new FCompSet[newCap]{};
             FCompCreate* newCompCreateCalls = new FCompCreate[newCap]{};
             if (capacity > 0) {
                 std::copy(storages, storages + capacity, newStorages);
                 std::copy(ShutdownCalls, ShutdownCalls + capacity, newShutDownCalls);
-                std::copy(CompMoveCalls, CompMoveCalls + capacity, newCompMoveCalls);
+                std::copy(CompSetCalls, CompSetCalls + capacity, newCompSetCalls);
                 std::copy(CompCreateCalls, CompCreateCalls + capacity, newCompCreateCalls);
 
                 delete[] storages;
                 delete[] ShutdownCalls;
-                delete[] CompMoveCalls;
+                delete[] CompSetCalls;
                 delete[] CompCreateCalls;
             }
 
             storages = newStorages;
             ShutdownCalls = newShutDownCalls;
-            CompMoveCalls = newCompMoveCalls;
+            CompSetCalls = newCompSetCalls;
             CompCreateCalls = newCompCreateCalls;
             capacity = newCap;
         }
     }
 
-    static void RegisterCallByID(FCall sd, FCompMove cm, FCompCreate cc, uint16_t typeID) {
+    static void RegisterCallByID(FCall sd, FCompSet cs, FCompCreate cc, uint16_t typeID) {
         EnsureCapacity(typeID);
         ShutdownCalls[typeID] = sd;
-        CompMoveCalls[typeID] = cm;
+        CompSetCalls[typeID] = cs;
         CompCreateCalls[typeID] = cc;
     }
     static void UnregisterCallByID(uint16_t typeID) {
         assert(typeID < capacity);
         ShutdownCalls[typeID] = nullptr;
-        CompMoveCalls[typeID] = nullptr;
+        CompSetCalls[typeID] = nullptr;
         CompCreateCalls[typeID] = nullptr;
     }
     
@@ -170,12 +180,12 @@ struct CompManager {
 
         delete[] storages;
         delete[] ShutdownCalls;
-        delete[] CompMoveCalls;
+        delete[] CompSetCalls;
         delete[] CompCreateCalls;
 
         storages = nullptr;
         ShutdownCalls = nullptr;
-        CompMoveCalls = nullptr;
+        CompSetCalls = nullptr;
         CompCreateCalls = nullptr;
         capacity = 0;
     }
@@ -294,15 +304,15 @@ struct CompManager {
 
 template<typename T>
 struct Comp {
-    uint32_t _id = 0xffffffff;
+    uint32_t _id = InvalidIndex;
     uint16_t _generation = 0;
     uint16_t _typeID = 0xffff;
     
-    Comp() : _id(0xffffffff), _generation(0), _typeID(0xffff) {}
+    Comp() : _id(InvalidIndex), _generation(0), _typeID(0xffff) {}
     Comp(uint32_t id, uint16_t generation, uint16_t typeID) : _id(id), _generation(generation), _typeID(typeID) {}
     Comp(const T* ptr) { 
         if (ptr == nullptr) {
-            _id = 0xffffffff;
+            _id = InvalidIndex;
             _generation = 0;
             _typeID = 0xffff;
             return;
@@ -315,7 +325,7 @@ struct Comp {
         const CompStorageView& stor = CompManager::storages[t_typeID];
         if (t_id >= stor.sizeSparse) [[unlikely]] return;
         const auto& element = stor.sparse[t_id];
-        if ((element.index == 0xffffffff) & (ptr != reinterpret_cast<T*>(
+        if ((element.index == InvalidIndex) & (ptr != reinterpret_cast<T*>(
             reinterpret_cast<uint8_t*>(stor.memPack[element.index >> stor.PackSizeShift]) + 
             (element.index & stor.sizePackMask) * stor.sizeComponent))
         ) [[unlikely]] return;
@@ -340,7 +350,7 @@ struct Comp {
         const auto& stor = CompManager::storages[_typeID];
         if (_id >= stor.sizeSparse) [[unlikely]] return false;
         const auto& element = stor.sparse[_id];
-        return (element.index != 0xffffffff) & (element.generation == _generation);
+        return (element.index != InvalidIndex) & (element.generation == _generation);
     }
     inline uint32_t GetUnsafeIndex() const {
         return CompManager::storages[_typeID].sparse[_id].index;

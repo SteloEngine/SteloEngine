@@ -33,7 +33,7 @@ struct alignas(8) CompInfo {
     constexpr static uint16_t STATE_SELF_STATIC_MASK = 1 << 6;
     constexpr static uint16_t STATE_SELF_PENDING_MASK = 1 << 7;
 
-    uint32_t id = 0xffffffff;
+    uint32_t id = InvalidIndex;
     uint16_t state = 0;
     uint16_t typeID = 0xffff;
 

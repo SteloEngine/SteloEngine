@@ -23,7 +23,7 @@
 namespace Stelo {
     template<>
     Comp<Transform> GameObject::AddComponent<Transform>() {
-        if(_transform.GetID() != 0xffffffff) return _transform;
+        if(_transform.GetID() != InvalidIndex) return _transform;
         GameObjectState ctx = _isActive ? (_isStatic ? GameObjectState::Static : GameObjectState::Active) : GameObjectState::Inactive;
         _transform = CompStorage<Transform>::CreateRaw(ctx);
         _components.push_back({_transform.GetID(), _transform.GetGeneration(), _transform.GetTypeID()});

@@ -30,35 +30,15 @@ Comp<CompObject> CompObject::GetHandle() {
 
 void CompObject::SetActive(bool value) {
     if (_info.IsSelfActive() == value || _info.IsSelfDestroyed()) return;
-    _info.SetSelfActive(value);
-
     if (_info.GetGameObjectState() == GameObjectState::Active) {
-        if (value) {
-            ContextState targetState = _info.IsSelfStatic() ? ContextState::Static : ContextState::Active;
-            _info.SetContextState(targetState);
-            CompManager::CompMoveCalls[_info.typeID](_info, CompMoveCode::MoveToActive);
-        } 
-        else {
-            _info.SetContextState(ContextState::Inactive);
-            CompManager::CompMoveCalls[_info.typeID](_info, CompMoveCode::MoveToInactive);
-        }
-    } else {
-        _info.SetContextState(ContextState::Inactive);
-    }
+        CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetActive, value);
+    } 
 }
 
 void CompObject::SetStatic(bool value) {
     if (_info.IsSelfStatic() == value || _info.IsSelfDestroyed()) return;
-    _info.SetSelfStatic(value);
-
     if (_info.GetGameObjectState() == GameObjectState::Active && _info.IsSelfActive()) {
-        if (value) {
-            _info.SetContextState(ContextState::Static);
-            CompManager::CompMoveCalls[_info.typeID](_info, CompMoveCode::MoveToStatic);
-        } else {
-            _info.SetContextState(ContextState::Active);
-            CompManager::CompMoveCalls[_info.typeID](_info, CompMoveCode::MoveToActive);
-        }
+        CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetStatic, value);
     }
 }
 
@@ -66,7 +46,7 @@ void CompObject::Destroy() {
     if (_info.IsSelfDestroyed()) return;
     _info.SetContextState(ContextState::Destroy);
     _info.SetSelfDestroyed(true);
-    CompManager::CompMoveCalls[_info.typeID](_info, CompMoveCode::MoveToDestroy);
+    CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetDestroy, true);
 }
 
 
