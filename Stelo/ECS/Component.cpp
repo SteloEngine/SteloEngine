@@ -30,22 +30,16 @@ Comp<CompObject> CompObject::GetHandle() {
 
 void CompObject::SetActive(bool value) {
     if (_info.IsSelfActive() == value || _info.IsSelfDestroyed()) return;
-    if (_info.GetGameObjectState() == GameObjectState::Active) {
-        CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetActive, value);
-    } 
+    CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetActive, value);
 }
 
 void CompObject::SetStatic(bool value) {
     if (_info.IsSelfStatic() == value || _info.IsSelfDestroyed()) return;
-    if (_info.GetGameObjectState() == GameObjectState::Active && _info.IsSelfActive()) {
-        CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetStatic, value);
-    }
+    CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetStatic, value);
 }
 
 void CompObject::Destroy() {
     if (_info.IsSelfDestroyed()) return;
-    _info.SetContextState(ContextState::Destroy);
-    _info.SetSelfDestroyed(true);
     CompManager::CompSetCalls[_info.GetTypeID()](_info, CompSetCode::SetDestroy, true);
 }
 

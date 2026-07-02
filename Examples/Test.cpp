@@ -77,7 +77,7 @@ struct Test : public Component {
 template<>
 struct CompStorageConfig<Test> : public CompStorageConfig<void> {
     static constexpr uint32_t InitialPackCount = 1;
-    static constexpr uint8_t PackSizeShift = 24;
+    static constexpr uint8_t PackSizeShift = 16;
 };
 REGISTER_COMPONENT(Test)
 
@@ -186,10 +186,13 @@ int main() {
 
     GameObject* go = new GameObject();
     go->AddComponent<Transform>();
-    go->_components.reserve(1 << 24);
-    for(uint32_t i = 0; i < (1 << 24); ++i) {
+    go->_components.reserve(1 << 16);
+    auto firstComp = go->AddComponent<Test>();
+    for(uint32_t i = 0; i < (1 << 16) - 1; ++i) {
         go->AddComponent<Test>();
     }
+
+    firstComp->SetActive(false);
 
     GameObject* go2 = new GameObject();
     go2->AddComponent<Transform>();

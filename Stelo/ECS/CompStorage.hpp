@@ -66,10 +66,21 @@ struct CompStorage<C, false> {
 
     using Pack = std::array<C, 1 << CompStorageConfig<C>::PackSizeShift>;
 
+    static const uint16_t InitDefaulteCreateState() {
+        CompInfo info(0, 0, 0);
+        info.SetSelfPending(true);
+        info.SetSelfActive(true);
+        info.SetSelfStatic(false);
+        info.SetSelfDestroyed(false);
+        return info.state;
+    }
+
     static constexpr uint32_t PackSize = 1 << CompStorageConfig<C>::PackSizeShift;
     static constexpr uint32_t PackSizeMask = PackSize - 1;
     static constexpr uint32_t PackSizeShift = CompStorageConfig<C>::PackSizeShift;
     static constexpr uint32_t InitialPackCount = CompStorageConfig<C>::InitialPackCount;
+
+    static const inline uint16_t DefaultCreateState = InitDefaulteCreateState();
 
     static inline std::vector<Pack*> _components = {};
     static inline std::vector<CompIndex> _sparse = {};
@@ -200,15 +211,10 @@ struct CompStorage<C, false> {
             updateView = true;
         }
         
-        CompInfo info(id, 0, _typeId);
+        CompInfo info(id, DefaultCreateState, _typeId);
         CompIndex& sparseIndex = _sparse[id];
         sparseIndex.index = physicIndex;
         sparseIndex.typeID = _typeId;
-
-        info.SetSelfPending(true);
-        info.SetSelfActive(true);
-        info.SetSelfStatic(false);
-        info.SetSelfDestroyed(false);
 
         info.SetContextState(ctx);
         info.SetGameObjectState(ctx);
@@ -239,40 +245,46 @@ struct CompStorage<C, false> {
 
         switch (code) {
             case CompSetCode::SetActive: {
-                info.SetSelfActive(value);
-                if (value) {
-                    if (info.IsSelfStatic()) {
+                if (info.GetGameObjectState() != GameObjectState::Inactive){
+                    info.SetSelfActive(value);
+                    if (value) {
+                        if (info.IsSelfStatic() || info.GetGameObjectState() == GameObjectState::Static) {
+                            info.SetContextState(ContextState::Static);
+                            mvCode = CompMoveCode::MoveToStatic;
+                        } else {
+                            info.SetContextState(ContextState::Active);
+                            mvCode = CompMoveCode::MoveToActive;
+                        }
+                        if constexpr (HasOnEnable<C>) GetCompRef(_sparse[info.GetID()].index).OnEnable();
+                    } else {
+                        info.SetContextState(ContextState::Inactive);
+                        mvCode = CompMoveCode::MoveToInactive;
+                        if constexpr (HasOnDisable<C>) GetCompRef(_sparse[info.GetID()].index).OnDisable();
+                    }
+                }
+                break;
+            }
+            
+            case CompSetCode::SetStatic: {
+                if (info.GetGameObjectState() == GameObjectState::Active){
+                    info.SetSelfStatic(value);
+                    if (value) {
                         info.SetContextState(ContextState::Static);
                         mvCode = CompMoveCode::MoveToStatic;
                     } else {
                         info.SetContextState(ContextState::Active);
                         mvCode = CompMoveCode::MoveToActive;
                     }
-                    if constexpr (HasOnEnable<C>) GetCompRef(info.GetID()).OnEnable();
-                } else {
-                    info.SetContextState(ContextState::Inactive);
-                    mvCode = CompMoveCode::MoveToInactive;
-                    if constexpr (HasOnDisable<C>) GetCompRef(info.GetID()).OnDisable();
-                }
-                break;
-            }
-            
-            case CompSetCode::SetStatic: {
-                info.SetSelfStatic(value);
-                if (value) {
-                    info.SetContextState(ContextState::Static);
-                    mvCode = CompMoveCode::MoveToStatic;
-                } else {
-                    info.SetContextState(ContextState::Active);
-                    mvCode = CompMoveCode::MoveToActive;
                 }
                 break;
             }
             
             case CompSetCode::SetDestroy: {
                 info.SetContextState(ContextState::Destroy);
-                if constexpr (HasOnDestroy<C>) GetCompRef(info.GetID()).OnDestroy();
+                info.SetSelfDestroyed(true);
+                if constexpr (HasOnDestroy<C>) GetCompRef(_sparse[info.GetID()].index).OnDestroy();
                 mvCode = CompMoveCode::MoveToDestroy;
+                ++_sparse[info.GetID()].generation;
                 break;
             }
         }

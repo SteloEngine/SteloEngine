@@ -238,23 +238,27 @@ struct CompStorage<Transform, false> {
 
         switch (code) {
             case CompSetCode::SetActive: {
-                if (value) {
-                    if (info.IsSelfStatic()) {
-                        info.SetContextState(ContextState::Static);
-                        mvCode = CompMoveCode::MoveToStatic;
+                if (info.GetGameObjectState() != GameObjectState::Inactive){
+                    info.SetSelfActive(value);
+                    if (value) {
+                        if (info.IsSelfStatic() || info.GetGameObjectState() == GameObjectState::Static) {
+                            info.SetContextState(ContextState::Static);
+                            mvCode = CompMoveCode::MoveToStatic;
+                        } else {
+                            info.SetContextState(ContextState::Active);
+                            mvCode = CompMoveCode::MoveToActive;
+                        }
                     } else {
-                        info.SetContextState(ContextState::Active);
-                        mvCode = CompMoveCode::MoveToActive;
+                        info.SetContextState(ContextState::Inactive);
+                        mvCode = CompMoveCode::MoveToInactive;
                     }
-                } else {
-                    info.SetContextState(ContextState::Inactive);
-                    mvCode = CompMoveCode::MoveToInactive;
                 }
                 break;
             }
             
             case CompSetCode::SetStatic: {
-                if (info.GetGameObjectState() == GameObjectState::Active && info.IsSelfActive()) {
+                if (info.GetGameObjectState() == GameObjectState::Active){
+                    info.SetSelfStatic(value);
                     if (value) {
                         info.SetContextState(ContextState::Static);
                         mvCode = CompMoveCode::MoveToStatic;
@@ -262,15 +266,15 @@ struct CompStorage<Transform, false> {
                         info.SetContextState(ContextState::Active);
                         mvCode = CompMoveCode::MoveToActive;
                     }
-                } else {
-                    mvCode = CompMoveCode::MoveToInactive;
                 }
                 break;
             }
             
             case CompSetCode::SetDestroy: {
                 info.SetContextState(ContextState::Destroy);
+                info.SetSelfDestroyed(true);
                 mvCode = CompMoveCode::MoveToDestroy;
+                ++_sparse[info.GetID()].generation;
                 break;
             }
         }
@@ -282,7 +286,8 @@ struct CompStorage<Transform, false> {
             _stateMoveCode[info.GetID()] = static_cast<uint32_t>(_moveCode.size());
             _moveCode.push_back({info.GetID(), mvCode});
         }
-    }    
+    }
+ 
     static void ExecuteMoveAction() {
         _executeMoveActionRegistered = false;
         for (const auto& [id, moveCode] : _moveCode) {
