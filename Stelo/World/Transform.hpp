@@ -24,6 +24,7 @@
 #include "../ECS/Component.hpp"
 #include "../ECS/CompStorage.hpp"
 #include "ECS/Comp.hpp"
+#include <memory>
 
 namespace Stelo {
 struct Transform : public CompObject {
@@ -89,8 +90,8 @@ struct CompStorage<Transform, false> {
 
     static const inline uint16_t DefaultCreateState = InitDefaulteCreateState();
 
-    static inline std::vector<Pack*> _components = {};
-    static inline std::vector<PackTree*> _componentsTree = {};
+    static inline std::vector<std::unique_ptr<Pack>> _components = {};
+    static inline std::vector<std::unique_ptr<PackTree>> _componentsTree = {};
 
     static inline std::vector<CompIndex> _sparse = {};
     static inline std::vector<uint32_t> _stateMoveCode = {};
@@ -149,7 +150,7 @@ struct CompStorage<Transform, false> {
 
     static bool Initial() {
         _components.resize(InitialPackCount);
-        for (uint32_t i = 0; i < InitialPackCount; i++) _components[i] = new Pack();
+        for (uint32_t i = 0; i < InitialPackCount; i++) _components[i] = std::make_unique<Pack>();
         _sparse.resize(InitialPackCount * PackSize);
         _stateMoveCode.resize(InitialPackCount * PackSize);
         UpdateView();
@@ -198,8 +199,8 @@ struct CompStorage<Transform, false> {
 
             const uint32_t newSize = _components.size();
             for(uint32_t i = lastSize; i < newSize; ++i) {
-                _components[i] = new Pack();
-                _componentsTree[i] = new PackTree();
+                _components[i] = std::make_unique<Pack>();
+                _componentsTree[i] = std::make_unique<PackTree>();
             }
             updateView = true;
         }
@@ -381,15 +382,11 @@ struct CompStorage<Transform, false> {
 
         const uint32_t targetPacks = std::max((uint32_t)InitialPackCount, (_size + PackSizeMask) >> PackSizeShift);
         while (_components.size() > targetPacks) {
-            delete _components.back();
             _components.pop_back();
         }
     }
 
     static void ShutDown() {
-        for (auto& pack : _components) delete pack;
-        for (auto& pack : _componentsTree) delete pack;
-
         _components.clear();
         _components.shrink_to_fit();
 

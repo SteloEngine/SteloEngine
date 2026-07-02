@@ -19,6 +19,8 @@
 #pragma once
 
 #include "../Math/Vector.hpp"
+#include "../Math/Box.hpp"
+
 #include "../Argon/Argon.hpp"
 
 #include "Asset.hpp"

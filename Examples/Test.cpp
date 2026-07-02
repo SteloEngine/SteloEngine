@@ -54,11 +54,6 @@ struct Vertex {
 
 };
 
-struct InstanceData {
-    Vector4 offset;
-    Vector4 color;
-};
-
 Vertex squareVertices[] = {
     { {-0.16f,  0.16f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f} },
     { { 0.16f,  0.16f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f} },
@@ -77,7 +72,7 @@ struct Test : public Component {
 template<>
 struct CompStorageConfig<Test> : public CompStorageConfig<void> {
     static constexpr uint32_t InitialPackCount = 1;
-    static constexpr uint8_t PackSizeShift = 16;
+    static constexpr uint8_t PackSizeShift = 24;
 };
 REGISTER_COMPONENT(Test)
 
@@ -186,13 +181,10 @@ int main() {
 
     GameObject* go = new GameObject();
     go->AddComponent<Transform>();
-    go->_components.reserve(1 << 16);
-    auto firstComp = go->AddComponent<Test>();
-    for(uint32_t i = 0; i < (1 << 16) - 1; ++i) {
-        go->AddComponent<Test>();
+    go->_components.reserve(1<<24);
+    for (int i = 0; i < (1<<24); i++) {
+       go->AddComponent<Test>();
     }
-
-    firstComp->SetActive(false);
 
     GameObject* go2 = new GameObject();
     go2->AddComponent<Transform>();
@@ -203,7 +195,21 @@ int main() {
     float renderAccumulator = 0.0f, fpsTimer = 0.0f;
     int frameCount = 0;
     try {
+        float accStartMs = 0.0f;
+        float accMoveMs = 0.0f;
+        float accPreUpdateMs = 0.0f;
+        float accUpdateMs = 0.0f;
+        float accPostUpdateMs = 0.0f;
+        float accRenderMs = 0.0f;
+        float accPollEventMs = 0.0f;
+        float accTotalLoopMs = 0.0f;
+
+        using MsDuration = std::chrono::duration<float, std::milli>;
+        auto lastTime = std::chrono::high_resolution_clock::now();
+
         while (App::IsRunning()) {
+            auto loopStart = std::chrono::high_resolution_clock::now();
+
             auto currentTime = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float> deltaTime = currentTime - lastTime;
             lastTime = currentTime;
@@ -213,16 +219,36 @@ int main() {
             fpsTimer += Time::logicTime;
             frameCount++;
 
+            auto recordStart = std::chrono::high_resolution_clock::now();
             CompManager::Start();
+            accStartMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - recordStart).count();
+
+            recordStart = std::chrono::high_resolution_clock::now();
             CompManager::ExecuteMoveAction();
+            accMoveMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - recordStart).count();
+
+            recordStart = std::chrono::high_resolution_clock::now();
             CompManager::PreUpdate();
+            accPreUpdateMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - recordStart).count();
+
+            recordStart = std::chrono::high_resolution_clock::now();
             CompManager::Update();
+            accUpdateMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - recordStart).count();
+
+            recordStart = std::chrono::high_resolution_clock::now();
             CompManager::PostUpdate();
+            accPostUpdateMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - recordStart).count();
 
             if (renderAccumulator > kRenderTimeStep) {
+                auto renderStart = std::chrono::high_resolution_clock::now();
+
                 Texture* frameTexture = nullptr;
                 Result acquireResult = GraphicManager::GetSwapChain()->AcquireTexture(&frameTexture, &log);
-                if (acquireResult == RESULT_NOT_READY) { log.Reset(); continue; }
+                if (acquireResult == RESULT_NOT_READY) { 
+                    log.Reset(); 
+                    accTotalLoopMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - loopStart).count();
+                    continue; 
+                }
                 if (!Check(acquireResult, "SwapChainAcquireTexture", log)) break;
 
                 colorAttachment.pTexture = frameTexture;
@@ -245,14 +271,43 @@ int main() {
                 GraphicManager::Queue()->Present(GraphicManager::GetSwapChain());
 
                 renderAccumulator -= kRenderTimeStep;
+
+                accRenderMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - renderStart).count();
             }
 
+            recordStart = std::chrono::high_resolution_clock::now();
+            App::PollEvent(PollType::Sandbox);
+            accPollEventMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - recordStart).count();
+
+            accTotalLoopMs += std::chrono::duration_cast<MsDuration>(std::chrono::high_resolution_clock::now() - loopStart).count();
+
             if (fpsTimer >= 1.0f) {
+                float div = frameCount > 0 ? static_cast<float>(frameCount) : 1.0f;
+
+                printf("[Avg per Frame] Start: %.3f ms, Move: %.3f ms, PreUpdate: %.3f ms, Update: %.3f ms, PostUpdate: %.3f ms, Render: %.3f ms, PollEvent: %.3f ms | TOTAL_LOOP: %.3f ms\n", 
+                    accStartMs / div, 
+                    accMoveMs / div, 
+                    accPreUpdateMs / div, 
+                    accUpdateMs / div, 
+                    accPostUpdateMs / div,
+                    accRenderMs / div,
+                    accPollEventMs / div,
+                    accTotalLoopMs / div);
+                    
                 printf("FPS: %d\n", frameCount);
+
                 frameCount = 0;
                 fpsTimer -= 1.0f;
+                
+                accStartMs = 0.0f;
+                accMoveMs = 0.0f;
+                accPreUpdateMs = 0.0f;
+                accUpdateMs = 0.0f;
+                accPostUpdateMs = 0.0f;
+                accRenderMs = 0.0f;
+                accPollEventMs = 0.0f;
+                accTotalLoopMs = 0.0f;
             }
-            App::PollEvent(PollType::Sandbox);
         }
     }
     catch (const std::exception& e) {

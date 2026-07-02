@@ -82,7 +82,7 @@ struct CompStorage<C, false> {
 
     static const inline uint16_t DefaultCreateState = InitDefaulteCreateState();
 
-    static inline std::vector<Pack*> _components = {};
+    static inline std::vector<std::unique_ptr<Pack>> _components = {};
     static inline std::vector<CompIndex> _sparse = {};
     static inline std::vector<uint32_t> _stateMoveCode = {};
     static inline std::vector<std::pair<uint32_t, CompMoveCode>> _moveCode = {};
@@ -136,6 +136,7 @@ struct CompStorage<C, false> {
 
     static bool Initial() {
         if constexpr (HasPreFixedUpdate<C>) CompManager::RegisterPreFixedUpdate(PreFixedUpdate);
+        if constexpr (HasFixedUpdate<C>) CompManager::RegisterFixedUpdate(FixedUpdate);
         if constexpr (HasPreUpdate<C>) CompManager::RegisterPreUpdate(PreUpdate);
         if constexpr (HasUpdate<C>) CompManager::RegisterUpdate(Update);
         if constexpr (HasPostUpdate<C>) CompManager::RegisterPostUpdate(PostUpdate);
@@ -144,7 +145,7 @@ struct CompStorage<C, false> {
         if constexpr (HasRender<C>) CompManager::RegisterRender(Render);
         if constexpr (HasPostRender<C>) CompManager::RegisterPostRender(PostRender);
 
-        for (uint32_t i = 0; i < InitialPackCount; ++i) _components.push_back(new Pack());
+        for (uint32_t i = 0; i < InitialPackCount; ++i) _components.push_back(std::make_unique<Pack>());
         _sparse.resize(InitialPackCount * PackSize);
         _stateMoveCode.resize(InitialPackCount * PackSize);
         UpdateView();
@@ -157,6 +158,7 @@ struct CompStorage<C, false> {
     }
     static bool Unregister() {
         if constexpr (HasStart<C>) CompManager::UnregisterStart(Start);
+        if constexpr (HasPreFixedUpdate<C>) CompManager::UnregisterPreFixedUpdate(PreFixedUpdate);
         if constexpr (HasFixedUpdate<C>) CompManager::UnregisterFixedUpdate(FixedUpdate);
         if constexpr (HasPreUpdate<C>) CompManager::UnregisterPreUpdate(PreUpdate);
         if constexpr (HasUpdate<C>) CompManager::UnregisterUpdate(Update);
@@ -195,7 +197,7 @@ struct CompStorage<C, false> {
             if (id >= _sparse.size()) {
                 size_t newSize = _sparse.size() == 0 ? id + 1 : _sparse.size() * 2;
                 _sparse.resize(newSize);
-                _stateMoveCode.resize(_sparse.size());
+                _stateMoveCode.resize(newSize, InvalidIndex);
                 updateView = true;
             }
         }
@@ -207,7 +209,7 @@ struct CompStorage<C, false> {
         if(packIndex >= lastSize) {
             _components.resize(packIndex + 1);
             const uint32_t newSize = _components.size();
-            for(uint32_t i = lastSize; i < newSize; ++i)  _components[i] = new Pack();
+            for(uint32_t i = lastSize; i < newSize; ++i) _components[i] = std::make_unique<Pack>();
             updateView = true;
         }
         
@@ -562,30 +564,16 @@ struct CompStorage<C, false> {
 
         const uint32_t targetPacks = std::max((uint32_t)InitialPackCount, (_size + PackSizeMask) >> PackSizeShift);
         while (_components.size() > targetPacks) {
-            delete _components.back();
             _components.pop_back();
         }
     }
 
     static void ShutDown() {
         if constexpr (HasOnDestroy<C>) {
-            const uint32_t endPack = _size >> CompStorageConfig<C>::PackSizeShift;
-            for(uint32_t i = 0; i < endPack; ++i) {
-                Pack& pack = *_components[i];
-                for(uint32_t j = 0; j < PackSize; ++j) {
-                    pack[j].OnDestroy();
-                }
-            }
-            const uint32_t sizeLastPack = _size & PackSizeMask;
-            if (sizeLastPack != 0) {
-                Pack& pack = *_components[endPack];
-                for(uint32_t j = 0; j < sizeLastPack; ++j) {
-                    pack[j].OnDestroy();
-                }
+            for (uint32_t i = 0; i < _size; ++i) {
+                (*_components[i >> PackSizeShift])[i & PackSizeMask].OnDestroy();
             }
         }
-
-        for (auto& comp : _components) delete comp;
 
         _components.clear();
         _components.shrink_to_fit();
