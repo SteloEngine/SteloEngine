@@ -114,7 +114,7 @@ struct CompStorage<C, false> {
         view.sizeSparse = static_cast<uint32_t>(_sparse.size());
         view.sizeComponent = static_cast<uint32_t>(sizeof(C));
         view.sizePackMask = PackSizeMask;
-        view.PackSizeShift = PackSizeShift;
+        view.sizePackShift = PackSizeShift;
         
         CompManager::UpdateView(view, _typeId);
     }
@@ -571,7 +571,8 @@ struct CompStorage<C, false> {
     static void ShutDown() {
         if constexpr (HasOnDestroy<C>) {
             for (uint32_t i = 0; i < _size; ++i) {
-                (*_components[i >> PackSizeShift])[i & PackSizeMask].OnDestroy();
+                auto& comp = (*_components[i >> PackSizeShift])[i & PackSizeMask];
+                if(!comp.GetCompInfo().IsSelfDestroyed()) comp.OnDestroy();
             }
         }
 
@@ -591,20 +592,226 @@ struct CompStorage<C, false> {
 
 template<typename C>
 struct CompStorage<C, true> {
-    static inline C _instance;
+    static const uint16_t InitDefaulteCreateState() {
+        CompInfo info(0, 0, 0);
+        info.SetSelfPending(true);
+        info.SetSelfActive(true);
+        info.SetSelfStatic(false);
+        info.SetSelfDestroyed(false);
+        return info.state;
+    }
+
+    static const inline uint16_t DefaultCreateState = InitDefaulteCreateState();
+
+    static inline C* _instance = nullptr;
     static inline CompIndex _index;
     static inline uint16_t _typeId = 0;
 
-    bool FistCreate() {
-        new (&_instance) C();
+    static inline bool _startRegistered = false;
+
+    static void UpdateView() {
+        CompStorageView view;
+        view.memPack = &_instance;
+        view.sparse = &_index;
+        view.sizeSparse = 1;
+        view.sizeComponent = static_cast<uint32_t>(sizeof(C));
+        view.sizePackMask = 1;
+        view.sizePackShift = 0;
+        
+        CompManager::UpdateView(view, _typeId);
+    }
+
+    static bool Initial(GameObjectState ctx) {
+        if constexpr (HasPreFixedUpdate<C>) CompManager::RegisterPreFixedUpdate(PreFixedUpdate);
+        if constexpr (HasFixedUpdate<C>) CompManager::RegisterFixedUpdate(FixedUpdate);
+        if constexpr (HasPreUpdate<C>) CompManager::RegisterPreUpdate(PreUpdate);
+        if constexpr (HasUpdate<C>) CompManager::RegisterUpdate(Update);
+        if constexpr (HasPostUpdate<C>) CompManager::RegisterPostUpdate(PostUpdate);
+
+        if constexpr (HasPreRender<C>) CompManager::RegisterPreRender(PreRender);
+        if constexpr (HasRender<C>) CompManager::RegisterRender(Render);
+        if constexpr (HasPostRender<C>) CompManager::RegisterPostRender(PostRender);
+
+        return true;
+    }
+    static bool Register() {
+        _typeId = CompTypeManager::Register<C>();
+        CompManager::RegisterCallByID(ShutDown, SetComp, Create, _typeId);
+        return true;
+    }
+    static bool Unregister() {
+        if constexpr (HasStart<C>) CompManager::UnregisterStart(Start);
+        if constexpr (HasPreFixedUpdate<C>) CompManager::UnregisterPreFixedUpdate(PreFixedUpdate);
+        if constexpr (HasFixedUpdate<C>) CompManager::UnregisterFixedUpdate(FixedUpdate);
+        if constexpr (HasPreUpdate<C>) CompManager::UnregisterPreUpdate(PreUpdate);
+        if constexpr (HasUpdate<C>) CompManager::UnregisterUpdate(Update);
+        if constexpr (HasPostUpdate<C>) CompManager::UnregisterPostUpdate(PostUpdate);
+
+        if constexpr (HasPreRender<C>) CompManager::UnregisterPreRender(PreRender);
+        if constexpr (HasRender<C>) CompManager::UnregisterRender(Render);
+        if constexpr (HasPostRender<C>) CompManager::UnregisterPostRender(PostRender);
+        
+        CompManager::UnregisterCallByID(_typeId);
+
+        return true;
+    }
+    
+    static void Start() {
+        _startRegistered = false;
+
+        if constexpr (CompStorageConfig<C>::Start != nullptr) {
+            CompStorageConfig<C>::Start(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForStart()) _instance->Start(); 
+        }
+    }
+    static void PreFixedUpdate() {
+        if constexpr (CompStorageConfig<C>::PreFixedUpdate != nullptr) {
+            CompStorageConfig<C>::PreFixedUpdate(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForUpdate()) _instance->PreFixedUpdate(Time::fixedTime);
+        }
+    }
+    static void FixedUpdate() {
+        if constexpr (CompStorageConfig<C>::FixedUpdate != nullptr) {
+            CompStorageConfig<C>::FixedUpdate(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForUpdate()) _instance->FixedUpdate(Time::fixedTime);
+        }
+    }
+    static void PreUpdate() {
+        if constexpr (CompStorageConfig<C>::PreUpdate != nullptr) {
+            CompStorageConfig<C>::PreUpdate(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForUpdate()) _instance->PreUpdate(Time::logicTime);
+        }
+    }
+    static void Update() {
+        if constexpr (CompStorageConfig<C>::Update != nullptr) {
+            CompStorageConfig<C>::Update(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForUpdate()) _instance->Update(Time::logicTime);
+        }
+    }
+    static void PostUpdate() {
+        if constexpr (CompStorageConfig<C>::PostUpdate != nullptr) {
+            CompStorageConfig<C>::PostUpdate(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForUpdate()) _instance->PostUpdate(Time::logicTime);
+        }
+    }
+    static void PreRender() {
+        if constexpr (CompStorageConfig<C>::PreRender != nullptr) {
+            CompStorageConfig<C>::PreRender(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForRender()) _instance->PreRender();
+        }
+    }
+    static void Render() {
+        if constexpr (CompStorageConfig<C>::Render != nullptr) {
+            CompStorageConfig<C>::Render(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForRender()) _instance->Render();
+        }
+    }
+    static void PostRender() {
+        if constexpr (CompStorageConfig<C>::PostRender != nullptr) {
+            CompStorageConfig<C>::PostRender(0, 1, _instance);
+        }
+        else {
+            if (_instance->IsValidForRender()) _instance->PostRender();
+        }
+    } 
+    
+    static Comp<C> CreateRaw(GameObjectState ctx) {
+        static bool initial = Initial(ctx);
+        if (_instance == nullptr) return Comp<C>(_instance->GetID(), _index.generation, _typeId);
+
+        _instance = new C();
+        if constexpr (HasStart<C>) {
+            if(!_startRegistered) {
+                CompManager::QueueStart(Start);
+                _startRegistered = true;
+            }
+        }
+
+        uint32_t id = 0;
+        
+        CompInfo info(id, DefaultCreateState, _typeId);
         _index.index = 0;
         _index.generation = 0;
         _index.typeID = _typeId;
-        return true;
+
+        info.SetContextState(ctx);
+        info.SetGameObjectState(ctx);
+
+        _instance->InternalSetCompInfo(info);
+
+        return Comp<C>(_instance->GetID(), _index.generation, _typeId);
     }
-    Comp<C> Create() {
-        
-        return Comp<C>(&_instance);
+    static Comp<CompObject> Create(GameObjectState ctx) {
+        const Comp<C> comp = CreateRaw(ctx);
+        return Comp<CompObject>(comp.GetID(), comp.GetGeneration(), comp.GetTypeID());
+    }
+    static void SetComp(CompInfo& info, CompSetCode code, bool value) {
+        CompMoveCode mvCode;
+        switch (code) {
+            case CompSetCode::SetActive: {
+                if (info.GetGameObjectState() != GameObjectState::Inactive){
+                    info.SetSelfActive(value);
+                    if (value) {
+                        if (info.IsSelfStatic() || info.GetGameObjectState() == GameObjectState::Static) {
+                            info.SetContextState(ContextState::Static);
+                        } else {
+                            info.SetContextState(ContextState::Active);
+                        }
+                        if constexpr (HasOnEnable<C>) _instance->OnEnable();
+                    } else {
+                        info.SetContextState(ContextState::Inactive);
+                        if constexpr (HasOnDisable<C>) _instance->OnDisable();
+                    }
+                }
+                break;
+            }
+            
+            case CompSetCode::SetStatic: {
+                if (info.GetGameObjectState() == GameObjectState::Active){
+                    info.SetSelfStatic(value);
+                    if (value) {
+                        info.SetContextState(ContextState::Static);
+                        mvCode = CompMoveCode::MoveToStatic;
+                    } else {
+                        info.SetContextState(ContextState::Active);
+                        mvCode = CompMoveCode::MoveToActive;
+                    }
+                }
+                break;
+            }
+            
+            case CompSetCode::SetDestroy: {
+                info.SetContextState(ContextState::Destroy);
+                info.SetSelfDestroyed(true);
+                if constexpr (HasOnDestroy<C>) _instance->OnDestroy();
+                mvCode = CompMoveCode::MoveToDestroy;
+                ++_index.generation;
+                break;
+            }
+        }
+    }
+
+    static void ShutDown() {
+        if constexpr (HasOnDestroy<C>) _instance->OnDestroy();
+
+        delete _instance;
+        _instance = nullptr;
     }
 };
 

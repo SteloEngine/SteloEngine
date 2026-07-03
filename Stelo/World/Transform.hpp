@@ -119,7 +119,7 @@ struct CompStorage<Transform, false> {
         view.sizeSparse = static_cast<uint32_t>(_sparse.size());
         view.sizeComponent = static_cast<uint32_t>(sizeof(C));
         view.sizePackMask = PackSizeMask;
-        view.PackSizeShift = PackSizeShift;
+        view.sizePackShift = PackSizeShift;
         CompManager::UpdateView(view, _typeId);
     }
     

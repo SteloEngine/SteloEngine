@@ -96,12 +96,12 @@ struct CompStorageView {
     uint32_t sizeSparse;
     uint32_t sizeComponent;
     uint32_t sizePackMask;
-    uint8_t PackSizeShift;
+    uint8_t sizePackShift;
     uint8_t padding[3];
     
-    CompStorageView() : memPack(nullptr), sparse(nullptr), sizeSparse(0), sizeComponent(0), sizePackMask(0), PackSizeShift(0) {}
+    CompStorageView() : memPack(nullptr), sparse(nullptr), sizeSparse(0), sizeComponent(0), sizePackMask(0), sizePackShift(0) {}
     CompStorageView(void** memPacks, const CompIndex* sp, uint32_t szSp, uint32_t szComp, uint32_t szPackMark, uint8_t gf2) 
-        : memPack(memPacks), sparse(sp), sizeSparse(szSp), sizeComponent(szComp), sizePackMask(szPackMark), PackSizeShift(gf2) {}
+        : memPack(memPacks), sparse(sp), sizeSparse(szSp), sizeComponent(szComp), sizePackMask(szPackMark), sizePackShift(gf2) {}
 };
 
 struct CompManager {
@@ -326,7 +326,7 @@ struct Comp {
         if (t_id >= stor.sizeSparse) [[unlikely]] return;
         const auto& element = stor.sparse[t_id];
         if ((element.index == InvalidIndex) & (ptr != reinterpret_cast<T*>(
-            reinterpret_cast<uint8_t*>(stor.memPack[element.index >> stor.PackSizeShift]) + 
+            reinterpret_cast<uint8_t*>(stor.memPack[element.index >> stor.sizePackShift]) + 
             (element.index & stor.sizePackMask) * stor.sizeComponent))
         ) [[unlikely]] return;
 
@@ -358,7 +358,7 @@ struct Comp {
     inline T* GetUnsafePtr() const {
         const CompStorageView& stor = CompManager::storages[_typeID];
         return reinterpret_cast<T*>(
-            reinterpret_cast<uint8_t*>(stor.memPack[stor.sparse[_id].index >> stor.PackSizeShift]) + 
+            reinterpret_cast<uint8_t*>(stor.memPack[stor.sparse[_id].index >> stor.sizePackShift]) + 
             (stor.sparse[_id].index & stor.sizePackMask) * stor.sizeComponent
         );
     }

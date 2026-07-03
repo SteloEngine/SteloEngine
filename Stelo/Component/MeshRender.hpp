@@ -18,3 +18,8 @@
 
 #pragma once
 
+namespace Stelo {
+    
+
+    
+}

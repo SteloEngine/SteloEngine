@@ -18,3 +18,17 @@
 
 #pragma once
 
+#include "Vector.hpp"
+
+namespace Stelo {
+
+struct Vector3Int {
+    int x, y, z;
+};
+    
+struct Box {
+    Vector3Int center;
+    Vector3Int extents;
+};
+
+}

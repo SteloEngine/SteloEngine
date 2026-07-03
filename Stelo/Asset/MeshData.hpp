@@ -27,21 +27,40 @@
 
 namespace Stelo {
 
-struct Vertex {
+struct VertexBase {
     Vector3 position;
-    Vector2 uv;
-    float boneWeight;
-    uint32_t boneIndex;
+    Vector3 normal;
+    Vector4 tangent;
+    Vector2 uv0;
 };
 
-struct Mesh : public AssetObject {
-    std::vector<Vertex> vertices;
+struct VertexSkin {
+    float    boneWeights[4];
+    uint32_t boneIndices[4];
+};
+
+struct SubMesh {
+    uint32_t indexStart;
+    uint32_t indexCount;
+    uint32_t materialSlot;
+};
+
+struct MeshData : public AssetObject {
+    std::vector<VertexBase> vertices;
+    std::vector<VertexSkin> skinData;
     std::vector<uint32_t> indices;
 
+    std::vector<SubMesh> subMeshes;
+
+    Box bounds;
+
     Buffer* vertexBuffer;
+    Buffer* skinBuffer;
     Buffer* indexBuffer;
 
-
+    bool isSkinned = false;
+    bool keepCPUData = false;
 };
-    
+
+
 }
